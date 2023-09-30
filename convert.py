@@ -22,6 +22,7 @@ def onnx2nb(modelpath, savepath):
 
 modelpath="../../model/chatglm2-6b/block_0.onnx"
 savepath="chatglm2-6b-fluid"
+savepath_2="chatglm2-6b-nb"
 
-onnx2fluid(modelpath, savepath)
-# onnx2nb(modelpath, savepath)
+# onnx2fluid(modelpath, savepath)
+onnx2nb(modelpath, savepath_2)
