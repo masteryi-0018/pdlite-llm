@@ -5,7 +5,7 @@ def onnx2fluid(modelpath, savepath):
                 save_dir=savepath,
                 input_shape_dict=None,
                 convert_to_lite=False,
-                lite_valid_places="arm",
+                lite_valid_places="x86",
                 lite_model_type="naive_buffer",
                 disable_feedback=False,
                 enable_onnx_checker=True)
@@ -20,9 +20,17 @@ def onnx2nb(modelpath, savepath):
                 disable_feedback=False,
                 enable_onnx_checker=True)
 
-modelpath="../../model/chatglm2-6b/block_0.onnx"
-savepath="chatglm2-6b-fluid"
-savepath_2="chatglm2-6b-nb"
+import sys
+index = sys.argv[1]
+if index != '-1':
+    modelpath="../../model/chatglm2-6b/block_" + str(index) + ".onnx"
+    savepath="chatglm2-6b/block_" + str(index)
+    onnx2fluid(modelpath, savepath)
+else:
+    modelpath="../../model/chatglm2-6b/lm.onnx"
+    savepath="chatglm2-6b/lm"
+    onnx2fluid(modelpath, savepath)
 
-# onnx2fluid(modelpath, savepath)
-onnx2nb(modelpath, savepath_2)
+    modelpath="../../model/chatglm2-6b/embedding.onnx"
+    savepath="chatglm2-6b/embedding"
+    onnx2fluid(modelpath, savepath)

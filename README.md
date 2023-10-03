@@ -1,5 +1,18 @@
 # pdlite-llm
 
+## 环境准备
+
+- cmake
+- gcc
+- g++
+- conda
+
+```shell
+conda create -n llm python=3.8
+conda activate llm
+pip install -r requirements.txt
+```
+
 ## 模型准备
 
 可以根据自己的需要，将原始模型转化至onnx格式；本项目借鉴[https://github.com/wangzhaode/llm-export](https://github.com/wangzhaode/llm-export)，直接下载了其onnx模型，使用chatglm2-6b的模型进行测试
@@ -15,11 +28,15 @@ if axes == [-1]:
 
 具体原因还不知道，先把其强行设置成为0
 
-执行脚本`convert.py`
+执行脚本
+
+```shell
+bash convert.sh
+```
 
 ## 模型量化
 
-待补充
+暂时使用paddleslim，动态离线量化，并没有显著的效果
 
 ## 源码编译
 
