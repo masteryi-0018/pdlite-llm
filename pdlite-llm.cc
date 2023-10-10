@@ -17,6 +17,7 @@
 #include <iostream>
 #include <vector>
 #include "paddle_api.h"  // NOLINT
+#include "cppjieba/Jieba.hpp"
 /////////////////////////////////////////////////////////////////////////
 // If this demo is linked to static library:libpaddle_api_light_bundled.a
 // , you should include `paddle_use_ops.h` and `paddle_use_kernels.h` to
@@ -130,39 +131,110 @@ double compute_standard_deviation(const T* in,
   return sqrt(variance);
 }
 
-// Chatglm2_6b
-// std::vector<int> tokenizer_encode(std::string input_str) {
-//     std::vector<int> ids;
-//     std::vector<std::string> words;
-//     std::string dict_path = tokenizer_dir_ + "/jieba.dict.utf8";
-//     std::string model_path = tokenizer_dir_ + "/hmm_model.utf8";
-//     std::string user_dict_path = tokenizer_dir_ + "/user.dict.utf8";
-//     std::string idf_path = tokenizer_dir_ + "/idf.utf8";
-//     std::string stopWord_path = tokenizer_dir_ + "/stop_words.utf8";
-//     cppjieba::Jieba jieba(
-//         dict_path,
-//         model_path,
-//         user_dict_path,
-//         idf_path,
-//         stopWord_path
-//     );
-//     jieba.Cut(input_str, words, true);
-//     for (auto word : words) {
-//         const auto& iter = word_encoder_.find(word);
-//         if (iter != word_encoder_.end()) {
-//             ids.push_back(iter->second);
-//         }
-//     }
-//     return ids;
-// }
+// base64
+typedef unsigned char BYTE;
+static const std::string base64_chars =
+             "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+             "abcdefghijklmnopqrstuvwxyz"
+             "0123456789+/";
 
-// std::vector<int> Chatglm2_6b::tokenizer(const std::string& query) {
-//     auto prompt = "\n问：\n" + query + "答：\n";
-//     auto ids = tokenizer_encode(prompt);
-//     ids.insert(ids.begin(), 64792);
-//     ids.insert(ids.begin(), 64790);
-//     return ids;
-// }
+static inline bool is_base64(BYTE c) {
+  return (isalnum(c) || (c == '+') || (c == '/'));
+}
+
+std::string base64_decode(std::string const& encoded_string) {
+  int in_len = encoded_string.size();
+  int i = 0;
+  int j = 0;
+  int in_ = 0;
+  BYTE char_array_4[4], char_array_3[3];
+  std::string ret;
+
+  while (in_len-- && ( encoded_string[in_] != '=') && is_base64(encoded_string[in_])) {
+    char_array_4[i++] = encoded_string[in_]; in_++;
+    if (i ==4) {
+      for (i = 0; i <4; i++)
+        char_array_4[i] = base64_chars.find(char_array_4[i]);
+
+      char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
+      char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
+      char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
+
+      for (i = 0; (i < 3); i++)
+          ret.push_back(char_array_3[i]);
+      i = 0;
+    }
+  }
+
+  if (i) {
+    for (j = i; j <4; j++)
+      char_array_4[j] = 0;
+
+    for (j = 0; j <4; j++)
+      char_array_4[j] = base64_chars.find(char_array_4[j]);
+
+    char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
+    char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
+    char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
+
+    for (j = 0; (j < i - 1); j++) ret.push_back(char_array_3[j]);
+  }
+
+  return ret;
+}
+
+// Chatglm2_6b
+std::vector<int64_t> tokenizer_encode(std::string input_str) {
+    std::vector<int64_t> ids;
+    std::vector<std::string> words;
+    std::string tokenizer_dir_ = "./tokenizer";
+    std::string dict_path = tokenizer_dir_ + "/jieba.dict.utf8";
+    std::string model_path = tokenizer_dir_ + "/hmm_model.utf8";
+    std::string user_dict_path = tokenizer_dir_ + "/user.dict.utf8";
+    std::string idf_path = tokenizer_dir_ + "/idf.utf8";
+    std::string stopWord_path = tokenizer_dir_ + "/stop_words.utf8";
+    std::vector<std::string> word_decoder_;
+    std::unordered_map<std::string, int> word_encoder_;
+    // load vocab
+    {
+        std::string model_name_ = "Chatglm2_6b";
+        std::string vocab_path = tokenizer_dir_ + "/" + model_name_ + "_vocab.txt";
+        printf("load %s ... ", vocab_path.c_str());
+        std::ifstream vocab_file(vocab_path);
+        int index = 0;
+        std::string word;
+        while (vocab_file >> word) {
+            word = base64_decode(word);
+            word_decoder_.push_back(word);
+            word_encoder_.insert(std::make_pair<std::string, int>(std::move(word), index++));
+        }
+        printf("Done!\n");
+    }
+    // encode
+    cppjieba::Jieba jieba(
+        dict_path,
+        model_path,
+        user_dict_path,
+        idf_path,
+        stopWord_path
+    );
+    jieba.Cut(input_str, words, true);
+    for (auto word : words) {
+        const auto& iter = word_encoder_.find(word);
+        if (iter != word_encoder_.end()) {
+            ids.push_back(iter->second);
+        }
+    }
+    return ids;
+}
+
+std::vector<int64_t> tokenizer(const std::string& query) {
+    auto prompt = "\n问：\n" + query + "答：\n";
+    auto ids = tokenizer_encode(prompt);
+    ids.insert(ids.begin(), 64792);
+    ids.insert(ids.begin(), 64790);
+    return ids;
+}
 
 // VARP Chatglm2_6b::gen_attention_mask(int seq_len) {
 //     auto attention_mask = _Input({1, 1, seq_len, seq_len}, NCHW, halide_type_of<int>());
@@ -228,7 +300,7 @@ double compute_standard_deviation(const T* in,
 // }
 
 void RunModel(std::string model_dir,
-              const std::vector<shape_t>& input_shapes,
+              std::vector<int64_t>& input_t,
               size_t repeats,
               size_t warmup,
               size_t print_output_elem
@@ -242,12 +314,6 @@ void RunModel(std::string model_dir,
   config.set_metal_lib_path(metal_lib_path);
   config.set_metal_use_mps(true);
 #else
-  // NOTE: Use gpu with opencl, you should ensure:
-  //  first, [compile **cpu+opencl** paddlelite
-  //    lib](https://github.com/PaddlePaddle/Paddle-Lite/blob/develop/docs/demo_guides/opencl.md);
-  //  second, [convert and use opencl nb
-  //    model](https://github.com/PaddlePaddle/Paddle-Lite/blob/develop/docs/user_guides/opt/opt_bin.md).
-
   bool is_opencl_backend_valid = false;
   try {
     is_opencl_backend_valid =
@@ -266,24 +332,14 @@ void RunModel(std::string model_dir,
       CreatePaddlePredictor<MobileConfig>(config);
 
   // 3. Prepare input data
-  // for (int j = 0; j < input_shapes.size(); ++j) {
   auto input_tensor = predictor->GetInput(0);
-  // external
-  std::vector<int64_t> external_data(1 * 16, 1);
-  input_tensor->Resize(std::vector<int64_t>({1, 16}));
-  size_t memory_size = external_data.size() * sizeof(int64_t);
-  input_tensor->ShareExternalMemory(static_cast<void*>(external_data.data()),
+  shape_t input_shape = {int64_t(input_t.size())};
+  input_tensor->Resize(input_shape);
+  size_t memory_size = input_t.size() * sizeof(int64_t);
+
+  input_tensor->ShareExternalMemory(static_cast<void*>(input_t.data()),
                                     memory_size,
                                     TargetType(2));
-  // std::cout << "gy ++++++" << std::endl;
-  // std::cout << external_data.data() << std::endl;
-  // PrecisionType pty = input_tensor->precision();
-  // std::cout << int(pty) << std::endl;
-  // std::cout << memory_size << std::endl;
-  // shape_t sp = input_tensor->shape();
-  // for (auto s : sp) {
-  //   std::cout << s << std::endl;
-  // }
   // }
 
   // 4. Run predictor
@@ -325,7 +381,7 @@ void RunModel(std::string model_dir,
   }
   avg_duration = sum_duration / static_cast<float>(repeats);
   std::cout << "\n======= benchmark summary =======\n"
-            << "input_shape(s) (NCHW):" << ShapePrint(input_shapes) << "\n"
+            << "input_shape(s) (NCHW):" << ShapePrint(input_shape) << "\n"
             << "model_dir:" << model_dir << "\n"
             << "warmup:" << warmup << "\n"
             << "repeats:" << repeats << "\n"
@@ -376,10 +432,6 @@ void RunModel(std::string model_dir,
 }
 
 int main(int argc, char** argv) {
-  std::vector<std::string> str_input_shapes;
-  std::vector<shape_t> input_shapes{
-      {1, 16}};  // shape_t ==> std::vector<int64_t>
-
   int repeats = 1;
   int warmup = 1;
   int print_output_elem = 0;
@@ -396,22 +448,9 @@ int main(int argc, char** argv) {
   }
 
   std::string model_dir = argv[1];
-  if (argc >= 6) {
-    input_shapes.clear();
-    std::string raw_input_shapes = argv[2];
-    std::cout << "raw_input_shapes: " << raw_input_shapes << std::endl;
-    str_input_shapes = split_string(raw_input_shapes);
-    for (size_t i = 0; i < str_input_shapes.size(); ++i) {
-      std::cout << "input shape: " << str_input_shapes[i] << std::endl;
-      input_shapes.push_back(get_shape(str_input_shapes[i]));
-    }
-
-    repeats = atoi(argv[3]);
-    warmup = atoi(argv[4]);
-    print_output_elem = atoi(argv[5]);
-  }
-
-  RunModel(model_dir, input_shapes, repeats, warmup, print_output_elem);
+  std::string query = "你好";
+  auto input_ids = tokenizer(query); // [64790, 64792, 54761, 31211, 39701, 55437, 31211]
+  RunModel(model_dir, input_ids, repeats, warmup, print_output_elem);
 
   return 0;
 }

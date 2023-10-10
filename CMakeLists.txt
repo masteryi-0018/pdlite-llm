@@ -33,6 +33,7 @@ endif()
 # 2. link mklml and Paddle-Lite directory
 link_directories(${LITE_DIR}/lib ${MKLML_DIR}/lib)
 include_directories(${LITE_DIR}/include/ ${MKLML_DIR}/include)
+include_directories(include)
 
 # 3. compile options
 if (NOT WIN32)
