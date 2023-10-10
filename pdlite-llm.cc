@@ -130,11 +130,109 @@ double compute_standard_deviation(const T* in,
   return sqrt(variance);
 }
 
+// Chatglm2_6b
+// std::vector<int> tokenizer_encode(std::string input_str) {
+//     std::vector<int> ids;
+//     std::vector<std::string> words;
+//     std::string dict_path = tokenizer_dir_ + "/jieba.dict.utf8";
+//     std::string model_path = tokenizer_dir_ + "/hmm_model.utf8";
+//     std::string user_dict_path = tokenizer_dir_ + "/user.dict.utf8";
+//     std::string idf_path = tokenizer_dir_ + "/idf.utf8";
+//     std::string stopWord_path = tokenizer_dir_ + "/stop_words.utf8";
+//     cppjieba::Jieba jieba(
+//         dict_path,
+//         model_path,
+//         user_dict_path,
+//         idf_path,
+//         stopWord_path
+//     );
+//     jieba.Cut(input_str, words, true);
+//     for (auto word : words) {
+//         const auto& iter = word_encoder_.find(word);
+//         if (iter != word_encoder_.end()) {
+//             ids.push_back(iter->second);
+//         }
+//     }
+//     return ids;
+// }
+
+// std::vector<int> Chatglm2_6b::tokenizer(const std::string& query) {
+//     auto prompt = "\n问：\n" + query + "答：\n";
+//     auto ids = tokenizer_encode(prompt);
+//     ids.insert(ids.begin(), 64792);
+//     ids.insert(ids.begin(), 64790);
+//     return ids;
+// }
+
+// VARP Chatglm2_6b::gen_attention_mask(int seq_len) {
+//     auto attention_mask = _Input({1, 1, seq_len, seq_len}, NCHW, halide_type_of<int>());
+//     auto ptr = attention_mask->writeMap<int>();
+//     if (seq_len > 1) {
+//         for (int i = 0; i < seq_len; i++) {
+//             for (int j = 0; j < seq_len; j++) {
+//                 ptr[seq_len * i + j] = j > i;
+//             }
+//         }
+//     } else {
+//         ptr[0] = 0;
+//     }
+//     return attention_mask;
+// }
+
+// VARP Chatglm2_6b::gen_position_ids(int seq_len) {
+//     auto position_ids = _Input({seq_len}, NCHW, halide_type_of<int>());
+//     auto ptr = position_ids->writeMap<int>();
+//     if (seq_len == 1) {
+//         ptr[0] = gen_seq_len_;
+//     } else {
+//         for (int i = 0; i < seq_len; i++) {
+//             ptr[i] = i;
+//         }
+//     }
+//     return position_ids;
+// }
+
+// bool Chatglm2_6b::is_stop(int token_id) {
+//     return token_id <= 2;
+// }
+
+// int forward(const std::vector<int>& input_ids) {
+//     int seq_len = input_ids.size();
+//     auto inputs_ids_ = _Const(input_ids.data(), {seq_len}, NCHW, halide_type_of<int>());
+//     auto attention_mask = gen_attention_mask(seq_len);
+//     auto position_ids = gen_position_ids(seq_len);
+//     int id = -1;
+//     bool is_single_ = false;
+//     int layer_nums_ = 3;
+//     if (is_single_) {
+//         // single model
+//         // auto outputs = modules_.back()->onForward({inputs_ids_, attention_mask, position_ids, past_key_values_[0]});
+//         // id = outputs[0]->readMap<int>()[0];
+//         // past_key_values_[0] = outputs[1];
+//         std::cout << "not single" << std::endl;
+//     } else {
+//         // split block models
+//         // auto hidden_states = modules_[layer_nums_ + 1]->onForward({inputs_ids_})[0];
+//         auto hidden_states = RunModel();
+//         for (int i = 0; i < layer_nums_; i++) {
+//             auto outputs = modules_[i]->onForward({hidden_states, attention_mask, position_ids, past_key_values_[i]});
+//             hidden_states = outputs[0];
+//             past_key_values_[i] = outputs[1];
+//         }
+//         auto outputs = modules_[layer_nums_]->onForward({hidden_states});
+//         id = outputs[0]->readMap<int>()[0];
+//     }
+//     all_seq_len_ += seq_len;
+//     gen_seq_len_++;
+//     return id;
+// }
+
 void RunModel(std::string model_dir,
               const std::vector<shape_t>& input_shapes,
               size_t repeats,
               size_t warmup,
-              size_t print_output_elem) {
+              size_t print_output_elem
+              ) {
   // 1. Set MobileConfig
   MobileConfig config;
   config.set_model_from_file(model_dir);
@@ -161,41 +259,6 @@ void RunModel(std::string model_dir,
   }
   std::cout << "is_opencl_backend_valid:" << is_opencl_backend_valid
             << std::endl;
-
-  if (is_opencl_backend_valid) {
-    // Set opencl kernel binary.
-    // Large addtitional prepare time is cost due to algorithm selecting and
-    // building kernel from source code.
-    // Prepare time can be reduced dramitically after building algorithm file
-    // and OpenCL kernel binary on the first running.
-    // The 1st running time will be a bit longer due to the compiling time if
-    // you don't call `set_opencl binary_path_name` explicitly.
-    // So call `set_opencl binary_path_name` explicitly is strongly recommended.
-
-    // Make sure you have write permission of the binary path.
-    // We strongly recommend each model has a unique binary name.
-    const std::string bin_path = "./";
-    const std::string bin_name = "lite_opencl_kernel.bin";
-    config.set_opencl_binary_path_name(bin_path, bin_name);
-
-    // opencl tune option
-    // CL_TUNE_NONE: 0
-    // CL_TUNE_RAPID: 1
-    // CL_TUNE_NORMAL: 2
-    // CL_TUNE_EXHAUSTIVE: 3
-    config.set_opencl_tune(CL_TUNE_NONE);
-
-    // opencl precision option. Most x86 devices only support fp32, so set
-    // CL_PRECISION_FP32 as default.
-    // CL_PRECISION_AUTO: 0, first fp16 if valid, default
-    // CL_PRECISION_FP32: 1, force fp32
-    // CL_PRECISION_FP16: 2, force fp16
-    config.set_opencl_precision(CL_PRECISION_FP32);
-  } else {
-    std::cout << "Unsupport opencl nb model." << std::endl;
-    // you can give backup cpu nb model instead
-    // config.set_model_from_file(cpu_nb_model_dir);
-  }
 #endif
 
   // 2. Create PaddlePredictor by MobileConfig
@@ -203,19 +266,25 @@ void RunModel(std::string model_dir,
       CreatePaddlePredictor<MobileConfig>(config);
 
   // 3. Prepare input data
-  for (int j = 0; j < input_shapes.size(); ++j) {
-    auto input_tensor = predictor->GetInput(j);
-    input_tensor->Resize(input_shapes[j]);
-    auto input_data = input_tensor->mutable_data<int64_t>(); // for embedding
-    int input_num = 1;
-    for (int i = 0; i < input_shapes[j].size(); ++i) {
-      input_num *= input_shapes[j][i];
-    }
-
-    for (int i = 0; i < input_num; ++i) {
-      input_data[i] = 1; // all 1
-    }
-  }
+  // for (int j = 0; j < input_shapes.size(); ++j) {
+  auto input_tensor = predictor->GetInput(0);
+  // external
+  std::vector<int64_t> external_data(1 * 16, 1);
+  input_tensor->Resize(std::vector<int64_t>({1, 16}));
+  size_t memory_size = external_data.size() * sizeof(int64_t);
+  input_tensor->ShareExternalMemory(static_cast<void*>(external_data.data()),
+                                    memory_size,
+                                    TargetType(2));
+  // std::cout << "gy ++++++" << std::endl;
+  // std::cout << external_data.data() << std::endl;
+  // PrecisionType pty = input_tensor->precision();
+  // std::cout << int(pty) << std::endl;
+  // std::cout << memory_size << std::endl;
+  // shape_t sp = input_tensor->shape();
+  // for (auto s : sp) {
+  //   std::cout << s << std::endl;
+  // }
+  // }
 
   // 4. Run predictor
   Timer timeInstance;
@@ -297,6 +366,13 @@ void RunModel(std::string model_dir,
       }
     }
   }
+  // std::vector<std::unique_ptr<const paddle::lite_api::Tensor>> ret;
+  // for (size_t tidx = 0; tidx < output_tensor_num; ++tidx) {
+  //   std::unique_ptr<const paddle::lite_api::Tensor> output_tensor =
+  //       predictor->GetOutput(tidx);
+  //   ret.emplace_back(output_tensor);
+  // }
+  // return ret;
 }
 
 int main(int argc, char** argv) {
