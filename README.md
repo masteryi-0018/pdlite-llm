@@ -54,3 +54,13 @@ target_link_libraries(${TARGET_NAME} ${MKLML_LIB_DIR}/libiomp5.so)
 ```shell
 bash linux_build.sh
 ```
+
+## 使用
+
+在源码中已经将转换好的模型路径写进去了，直接执行：
+
+```shell
+./pdlite-llm
+```
+
+即可

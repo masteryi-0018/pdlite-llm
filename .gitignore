@@ -1,3 +1,16 @@
 .vscode
+
+# model
 /chatglm2-6b
 /chatglm2-6b-opt
+
+# source code
+/Paddle-Lite
+
+# lib
+/cxx
+/mklml
+
+# build
+/build
+pdlite-llm
