@@ -268,7 +268,7 @@ std::vector<int64_t> gen_position_ids(int seq_len) {
 //     return token_id <= 2;
 // }
 
-std::vector<paddle::lite_api::Tensor*> RunModel_emb(std::string model_dir,
+std::vector<std::unique_ptr<const Tensor>> RunModel_emb(std::string model_dir,
               std::vector<int64_t>& input_t,
               size_t repeats,
               size_t warmup,
@@ -385,18 +385,15 @@ std::vector<paddle::lite_api::Tensor*> RunModel_emb(std::string model_dir,
     }
   }
 
-  std::vector<paddle::lite_api::Tensor*> ret;
-  for (size_t tidx = 0; tidx < output_tensor_num; ++tidx) {
-    std::unique_ptr<const paddle::lite_api::Tensor> output_tensor =
-        predictor->GetOutput(tidx);
-    paddle::lite_api::Tensor* output_tensor_1 = const_cast<paddle::lite_api::Tensor*>(output_tensor.get());
-    ret.emplace_back(output_tensor_1);
-  }
+  std::vector<std::unique_ptr<const Tensor>> ret;
+  std::unique_ptr<const Tensor> output_tensor(predictor->GetOutput(0));
+  std::cout << "precision: " << int(output_tensor->precision()) << std::endl;
+  ret.push_back(std::move(output_tensor));
   return ret;
 }
 
 std::vector<paddle::lite_api::Tensor*> RunModel_block(std::string model_dir,
-              paddle::lite_api::Tensor *hidden_states,
+              const paddle::lite_api::Tensor &hidden_states,
               std::vector<std::vector<std::vector<std::vector<int64_t>>>> &attention_mask,
               std::vector<int64_t> &position_ids,
               size_t repeats,
@@ -424,47 +421,41 @@ std::vector<paddle::lite_api::Tensor*> RunModel_block(std::string model_dir,
       CreatePaddlePredictor<MobileConfig>(config);
 
   // 3. Prepare input data
-  std::cout << "gy ++++++" << std::endl;
-  auto input_tensor_1 = predictor->GetInput(0);
-  std::cout << "gy ++++++" << std::endl;
-  shape_t input_shape_1 = hidden_states->shape();
-  std::cout << "gy ++++++" << std::endl;
-  input_tensor_1->Resize(input_shape_1);
-  std::cout << "gy ++++++" << std::endl;
-  size_t memory_size_1 = sizeof(float);
-  std::cout << "gy ++++++" << std::endl;
-  for (auto s : input_shape_1) {
-    memory_size_1 *= s;
-  }
-  std::cout << "gy ++++++" << std::endl;
-  input_tensor_1->ShareExternalMemory(static_cast<void*>(hidden_states),
-                                    memory_size_1,
-                                    TargetType(2));
-  std::cout << "gy1 ++++++" << std::endl;
+  // auto input_tensor_1 = predictor->GetInput(0);
+  // shape_t input_shape_1 = hidden_states->shape();
+  // input_tensor_1->Resize(input_shape_1);
+  // size_t memory_size_1 = sizeof(float);
+  // for (auto s : input_shape_1) {
+  //   memory_size_1 *= s;
+  // }
+  // input_tensor_1->ShareExternalMemory(static_cast<void*>(hidden_states),
+  //                                   memory_size_1,
+  //                                   TargetType(2));
+  // std::cout << "gy1 ++++++" << std::endl;
 
-  auto input_tensor_2 = predictor->GetInput(1);
-  shape_t input_shape_2 = {1, 1, int64_t(attention_mask[0][0].size()), int64_t(attention_mask[0][0].size())};
-  input_tensor_2->Resize(input_shape_2);
-  size_t memory_size_2 = sizeof(float);
-  for (auto s : input_shape_2) {
-    memory_size_2 *= s;
-  }
-  input_tensor_2->ShareExternalMemory(static_cast<void*>(attention_mask.data()),
-                                    memory_size_2,
-                                    TargetType(2));
-  std::cout << "gy2 ++++++" << std::endl;
+  // auto input_tensor_2 = predictor->GetInput(1);
+  // shape_t input_shape_2 = {1, 1, int64_t(attention_mask[0][0].size()), int64_t(attention_mask[0][0].size())};
+  // input_tensor_2->Resize(input_shape_2);
+  // size_t memory_size_2 = sizeof(float);
+  // for (auto s : input_shape_2) {
+  //   memory_size_2 *= s;
+  // }
+  // input_tensor_2->ShareExternalMemory(static_cast<void*>(attention_mask.data()),
+  //                                   memory_size_2,
+  //                                   TargetType(2));
+  // std::cout << "gy2 ++++++" << std::endl;
 
-  auto input_tensor_3 = predictor->GetInput(1);
-  shape_t input_shape_3 = {1, int64_t(position_ids.size())};
-  input_tensor_3->Resize(input_shape_3);
-  size_t memory_size_3 = sizeof(float);
-  for (auto s : input_shape_3) {
-    memory_size_3 *= s;
-  }
-  input_tensor_3->ShareExternalMemory(static_cast<void*>(position_ids.data()),
-                                    memory_size_3,
-                                    TargetType(2));
-  std::cout << "gy3 ++++++" << std::endl;
+  // auto input_tensor_3 = predictor->GetInput(1);
+  // shape_t input_shape_3 = {1, int64_t(position_ids.size())};
+  // input_tensor_3->Resize(input_shape_3);
+  // size_t memory_size_3 = sizeof(float);
+  // for (auto s : input_shape_3) {
+  //   memory_size_3 *= s;
+  // }
+  // input_tensor_3->ShareExternalMemory(static_cast<void*>(position_ids.data()),
+  //                                   memory_size_3,
+  //                                   TargetType(2));
+  // std::cout << "gy3 ++++++" << std::endl;
 
   // 4. Run predictor
   Timer timeInstance;
@@ -505,7 +496,7 @@ std::vector<paddle::lite_api::Tensor*> RunModel_block(std::string model_dir,
   }
   avg_duration = sum_duration / static_cast<float>(repeats);
   std::cout << "\n======= benchmark summary =======\n"
-            << "input_shape(s) (NCHW):" << ShapePrint(input_tensor_1->shape()) << "\n"
+            // << "input_shape(s) (NCHW):" << ShapePrint(input_tensor_1->shape()) << "\n"
             << "model_dir:" << model_dir << "\n"
             << "warmup:" << warmup << "\n"
             << "repeats:" << repeats << "\n"
@@ -580,13 +571,14 @@ int main(int argc, char** argv) {
   auto position_ids = gen_position_ids(seq_len);
   int id = -1;
   int layer_nums_ = 1;
+
   // split block models
-  paddle::lite_api::Tensor *hidden_states_ = ret[0];
+  std::cout << "precision: " << int(ret[0]->precision()) << std::endl;
   // inp.emplace_back(past_key_values_); // TODO
   for (int i = 0; i < layer_nums_; i++) {
       model_dir = "./chatglm2-6b-opt/block_" + std::to_string(i) + ".nb";
-      auto outputs = RunModel_block(model_dir, hidden_states_, attention_mask, position_ids, repeats, warmup, print_output_elem);
-      auto hidden_states = outputs[0];
+      // auto outputs = RunModel_block(model_dir, hidden_states_, attention_mask, position_ids, repeats, warmup, print_output_elem);
+      // auto hidden_states = outputs[0];
       // past_key_values_[i] = outputs[1].get();
   }
   // auto outputs = RunModel_lm();
