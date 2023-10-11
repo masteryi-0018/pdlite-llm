@@ -44,6 +44,7 @@ function init() {
 }
 
 init $@
+rm -rf ./build
 mkdir ./build
 cd ./build
 
@@ -54,4 +55,3 @@ else
 fi
 make
 cd ..
-rm -rf ./build

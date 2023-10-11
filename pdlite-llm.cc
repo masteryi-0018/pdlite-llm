@@ -183,7 +183,6 @@ std::string base64_decode(std::string const& encoded_string) {
   return ret;
 }
 
-// Chatglm2_6b
 std::vector<int64_t> tokenizer_encode(std::string input_str) {
     std::vector<int64_t> ids;
     std::vector<std::string> words;
@@ -228,6 +227,7 @@ std::vector<int64_t> tokenizer_encode(std::string input_str) {
     return ids;
 }
 
+// Chatglm2_6b
 std::vector<int64_t> tokenizer(const std::string& query) {
     auto prompt = "\n问：\n" + query + "答：\n";
     auto ids = tokenizer_encode(prompt);
@@ -236,70 +236,39 @@ std::vector<int64_t> tokenizer(const std::string& query) {
     return ids;
 }
 
-// VARP Chatglm2_6b::gen_attention_mask(int seq_len) {
-//     auto attention_mask = _Input({1, 1, seq_len, seq_len}, NCHW, halide_type_of<int>());
-//     auto ptr = attention_mask->writeMap<int>();
-//     if (seq_len > 1) {
-//         for (int i = 0; i < seq_len; i++) {
-//             for (int j = 0; j < seq_len; j++) {
-//                 ptr[seq_len * i + j] = j > i;
-//             }
-//         }
-//     } else {
-//         ptr[0] = 0;
-//     }
-//     return attention_mask;
-// }
+std::vector<std::vector<std::vector<std::vector<int64_t>>>> gen_attention_mask(int seq_len) {
+    std::vector<std::vector<std::vector<std::vector<int64_t>>>> attention_mask(1, \
+      std::vector<std::vector<std::vector<int64_t>>>(1, std::vector<std::vector<int64_t>>(seq_len, \
+      std::vector<int64_t>(seq_len, 0))));
+    if (seq_len > 1) {
+        for (int i = 0; i < seq_len; i++) {
+            for (int j = 0; j < seq_len; j++) {
+                attention_mask[0][0][i][j] = j > i;
+            }
+        }
+    } else {
+        attention_mask[0][0][0][0] = 0;
+    }
+    return attention_mask;
+}
 
-// VARP Chatglm2_6b::gen_position_ids(int seq_len) {
-//     auto position_ids = _Input({seq_len}, NCHW, halide_type_of<int>());
-//     auto ptr = position_ids->writeMap<int>();
-//     if (seq_len == 1) {
-//         ptr[0] = gen_seq_len_;
-//     } else {
-//         for (int i = 0; i < seq_len; i++) {
-//             ptr[i] = i;
-//         }
-//     }
-//     return position_ids;
-// }
+std::vector<int64_t> gen_position_ids(int seq_len) {
+    std::vector<int64_t> position_ids(seq_len, 0);
+    if (seq_len == 1) {
+        position_ids[0] = 0; // TODO: gen_seq_len_
+    } else {
+        for (int i = 0; i < seq_len; i++) {
+            position_ids[i] = i;
+        }
+    }
+    return position_ids;
+}
 
 // bool Chatglm2_6b::is_stop(int token_id) {
 //     return token_id <= 2;
 // }
 
-// int forward(const std::vector<int>& input_ids) {
-//     int seq_len = input_ids.size();
-//     auto inputs_ids_ = _Const(input_ids.data(), {seq_len}, NCHW, halide_type_of<int>());
-//     auto attention_mask = gen_attention_mask(seq_len);
-//     auto position_ids = gen_position_ids(seq_len);
-//     int id = -1;
-//     bool is_single_ = false;
-//     int layer_nums_ = 3;
-//     if (is_single_) {
-//         // single model
-//         // auto outputs = modules_.back()->onForward({inputs_ids_, attention_mask, position_ids, past_key_values_[0]});
-//         // id = outputs[0]->readMap<int>()[0];
-//         // past_key_values_[0] = outputs[1];
-//         std::cout << "not single" << std::endl;
-//     } else {
-//         // split block models
-//         // auto hidden_states = modules_[layer_nums_ + 1]->onForward({inputs_ids_})[0];
-//         auto hidden_states = RunModel();
-//         for (int i = 0; i < layer_nums_; i++) {
-//             auto outputs = modules_[i]->onForward({hidden_states, attention_mask, position_ids, past_key_values_[i]});
-//             hidden_states = outputs[0];
-//             past_key_values_[i] = outputs[1];
-//         }
-//         auto outputs = modules_[layer_nums_]->onForward({hidden_states});
-//         id = outputs[0]->readMap<int>()[0];
-//     }
-//     all_seq_len_ += seq_len;
-//     gen_seq_len_++;
-//     return id;
-// }
-
-void RunModel(std::string model_dir,
+std::vector<paddle::lite_api::Tensor*> RunModel_emb(std::string model_dir,
               std::vector<int64_t>& input_t,
               size_t repeats,
               size_t warmup,
@@ -309,11 +278,6 @@ void RunModel(std::string model_dir,
   MobileConfig config;
   config.set_model_from_file(model_dir);
 
-#ifdef METAL
-  std::string metal_lib_path = "../../../metal/lite.metallib";
-  config.set_metal_lib_path(metal_lib_path);
-  config.set_metal_use_mps(true);
-#else
   bool is_opencl_backend_valid = false;
   try {
     is_opencl_backend_valid =
@@ -325,7 +289,6 @@ void RunModel(std::string model_dir,
   }
   std::cout << "is_opencl_backend_valid:" << is_opencl_backend_valid
             << std::endl;
-#endif
 
   // 2. Create PaddlePredictor by MobileConfig
   std::shared_ptr<PaddlePredictor> predictor =
@@ -340,7 +303,6 @@ void RunModel(std::string model_dir,
   input_tensor->ShareExternalMemory(static_cast<void*>(input_t.data()),
                                     memory_size,
                                     TargetType(2));
-  // }
 
   // 4. Run predictor
   Timer timeInstance;
@@ -422,13 +384,177 @@ void RunModel(std::string model_dir,
       }
     }
   }
-  // std::vector<std::unique_ptr<const paddle::lite_api::Tensor>> ret;
-  // for (size_t tidx = 0; tidx < output_tensor_num; ++tidx) {
-  //   std::unique_ptr<const paddle::lite_api::Tensor> output_tensor =
-  //       predictor->GetOutput(tidx);
-  //   ret.emplace_back(output_tensor);
-  // }
-  // return ret;
+
+  std::vector<paddle::lite_api::Tensor*> ret;
+  for (size_t tidx = 0; tidx < output_tensor_num; ++tidx) {
+    std::unique_ptr<const paddle::lite_api::Tensor> output_tensor =
+        predictor->GetOutput(tidx);
+    paddle::lite_api::Tensor* output_tensor_1 = const_cast<paddle::lite_api::Tensor*>(output_tensor.get());
+    ret.emplace_back(output_tensor_1);
+  }
+  return ret;
+}
+
+std::vector<paddle::lite_api::Tensor*> RunModel_block(std::string model_dir,
+              paddle::lite_api::Tensor *hidden_states,
+              std::vector<std::vector<std::vector<std::vector<int64_t>>>> &attention_mask,
+              std::vector<int64_t> &position_ids,
+              size_t repeats,
+              size_t warmup,
+              size_t print_output_elem
+              ) {
+  // 1. Set MobileConfig
+  MobileConfig config;
+  config.set_model_from_file(model_dir);
+
+  bool is_opencl_backend_valid = false;
+  try {
+    is_opencl_backend_valid =
+        ::IsOpenCLBackendValid(false /*check_fp16_valid = false*/);
+  } catch (...) {
+    std::cerr << "Paddle-Lite Exception Happened on OpenCL Valid Check!"
+              << std::endl;
+    // Fall back to cpu model
+  }
+  std::cout << "is_opencl_backend_valid:" << is_opencl_backend_valid
+            << std::endl;
+
+  // 2. Create PaddlePredictor by MobileConfig
+  std::shared_ptr<PaddlePredictor> predictor =
+      CreatePaddlePredictor<MobileConfig>(config);
+
+  // 3. Prepare input data
+  std::cout << "gy ++++++" << std::endl;
+  auto input_tensor_1 = predictor->GetInput(0);
+  std::cout << "gy ++++++" << std::endl;
+  shape_t input_shape_1 = hidden_states->shape();
+  std::cout << "gy ++++++" << std::endl;
+  input_tensor_1->Resize(input_shape_1);
+  std::cout << "gy ++++++" << std::endl;
+  size_t memory_size_1 = sizeof(float);
+  std::cout << "gy ++++++" << std::endl;
+  for (auto s : input_shape_1) {
+    memory_size_1 *= s;
+  }
+  std::cout << "gy ++++++" << std::endl;
+  input_tensor_1->ShareExternalMemory(static_cast<void*>(hidden_states),
+                                    memory_size_1,
+                                    TargetType(2));
+  std::cout << "gy1 ++++++" << std::endl;
+
+  auto input_tensor_2 = predictor->GetInput(1);
+  shape_t input_shape_2 = {1, 1, int64_t(attention_mask[0][0].size()), int64_t(attention_mask[0][0].size())};
+  input_tensor_2->Resize(input_shape_2);
+  size_t memory_size_2 = sizeof(float);
+  for (auto s : input_shape_2) {
+    memory_size_2 *= s;
+  }
+  input_tensor_2->ShareExternalMemory(static_cast<void*>(attention_mask.data()),
+                                    memory_size_2,
+                                    TargetType(2));
+  std::cout << "gy2 ++++++" << std::endl;
+
+  auto input_tensor_3 = predictor->GetInput(1);
+  shape_t input_shape_3 = {1, int64_t(position_ids.size())};
+  input_tensor_3->Resize(input_shape_3);
+  size_t memory_size_3 = sizeof(float);
+  for (auto s : input_shape_3) {
+    memory_size_3 *= s;
+  }
+  input_tensor_3->ShareExternalMemory(static_cast<void*>(position_ids.data()),
+                                    memory_size_3,
+                                    TargetType(2));
+  std::cout << "gy3 ++++++" << std::endl;
+
+  // 4. Run predictor
+  Timer timeInstance;
+  double first_duration{-1};
+  for (size_t widx = 0; widx < warmup; ++widx) {
+    if (widx == 0) {
+      timeInstance.startTimer();
+      predictor->Run();
+      first_duration = timeInstance.getCostTimer();
+    } else {
+      predictor->Run();
+    }
+  }
+
+  double sum_duration = 0.0;
+  double max_duration = 1e-5;
+  double min_duration = 1e5;
+  double avg_duration = -1;
+  for (size_t ridx = 0; ridx < repeats; ++ridx) {
+    timeInstance.startTimer();
+    try {
+      predictor->Run();
+    } catch (...) {
+      std::cerr << "Paddle-Lite Exception Happened on Run()!" << std::endl;
+      // Fall back to cpu model
+      std::abort();
+    }
+
+    double duration = timeInstance.getCostTimer();
+    sum_duration += duration;
+    max_duration = duration > max_duration ? duration : max_duration;
+    min_duration = duration < min_duration ? duration : min_duration;
+    std::cout << "run_idx:" << ridx + 1 << " / " << repeats << ": " << duration
+              << " ms" << std::endl;
+    if (first_duration < 0) {
+      first_duration = duration;
+    }
+  }
+  avg_duration = sum_duration / static_cast<float>(repeats);
+  std::cout << "\n======= benchmark summary =======\n"
+            << "input_shape(s) (NCHW):" << ShapePrint(input_tensor_1->shape()) << "\n"
+            << "model_dir:" << model_dir << "\n"
+            << "warmup:" << warmup << "\n"
+            << "repeats:" << repeats << "\n"
+            << "*** time info(ms) ***\n"
+            << "1st_duration:" << first_duration << "\n"
+            << "max_duration:" << max_duration << "\n"
+            << "min_duration:" << min_duration << "\n"
+            << "avg_duration:" << avg_duration << "\n";
+
+  // 5. Get output
+  std::cout << "\n====== output summary ====== " << std::endl;
+  size_t output_tensor_num = predictor->GetOutputNames().size();
+  std::cout << "output tensor num:" << output_tensor_num << std::endl;
+
+  for (size_t tidx = 0; tidx < output_tensor_num; ++tidx) {
+    std::unique_ptr<const paddle::lite_api::Tensor> output_tensor =
+        predictor->GetOutput(tidx);
+    std::cout << "\n--- output tensor " << tidx << " ---" << std::endl;
+    auto out_shape = output_tensor->shape();
+    auto out_data = output_tensor->data<float>();
+    auto out_mean = compute_mean<float>(out_data, ShapeProduction(out_shape));
+    auto out_std_dev = compute_standard_deviation<float>(
+        out_data, ShapeProduction(out_shape), true, out_mean);
+
+    std::cout << "output shape(NCHW):" << ShapePrint(out_shape) << std::endl;
+    std::cout << "output tensor " << tidx
+              << " elem num:" << ShapeProduction(out_shape) << std::endl;
+    std::cout << "output tensor " << tidx
+              << " standard deviation:" << out_std_dev << std::endl;
+    std::cout << "output tensor " << tidx << " mean value:" << out_mean
+              << std::endl;
+
+    // print output
+    if (print_output_elem) {
+      for (int i = 0; i < ShapeProduction(out_shape); ++i) {
+        std::cout << "out[" << tidx << "][" << i
+                  << "]:" << output_tensor->data<float>()[i] << std::endl;
+      }
+    }
+  }
+
+  std::vector<paddle::lite_api::Tensor*> ret;
+  for (size_t tidx = 0; tidx < output_tensor_num; ++tidx) {
+    std::unique_ptr<const paddle::lite_api::Tensor> output_tensor =
+        predictor->GetOutput(tidx);
+    paddle::lite_api::Tensor* output_tensor_1 = const_cast<paddle::lite_api::Tensor*>(output_tensor.get());
+    ret.emplace_back(output_tensor_1);
+  }
+  return ret;
 }
 
 int main(int argc, char** argv) {
@@ -436,21 +562,37 @@ int main(int argc, char** argv) {
   int warmup = 1;
   int print_output_elem = 0;
 
-  if (argc > 2 && argc < 6) {
+  if (argc > 1) {
     std::cerr << "usage: ./" << argv[0] << "\n"
-              << "  <naive_buffer_model_dir>\n"
-              << "  <raw_input_shapes>, eg: 1,3,224,224 for 1 input; "
-                 "1,3,224,224:1,5 for 2 inputs\n"
-              << "  <repeats>\n"
-              << "  <warmup>\n"
-              << "  <print_output>" << std::endl;
+              << std::endl;
     return 0;
   }
 
-  std::string model_dir = argv[1];
+  std::string model_dir = "./chatglm2-6b-opt/embedding.nb";
   std::string query = "你好";
   auto input_ids = tokenizer(query); // [64790, 64792, 54761, 31211, 39701, 55437, 31211]
-  RunModel(model_dir, input_ids, repeats, warmup, print_output_elem);
+  auto ret = RunModel_emb(model_dir, input_ids, repeats, warmup, print_output_elem);
 
+  // block
+  int seq_len = input_ids.size();
+  auto inputs_ids_ = input_ids;
+  auto attention_mask = gen_attention_mask(seq_len);
+  auto position_ids = gen_position_ids(seq_len);
+  int id = -1;
+  int layer_nums_ = 1;
+  // split block models
+  paddle::lite_api::Tensor *hidden_states_ = ret[0];
+  // inp.emplace_back(past_key_values_); // TODO
+  for (int i = 0; i < layer_nums_; i++) {
+      model_dir = "./chatglm2-6b-opt/block_" + std::to_string(i) + ".nb";
+      auto outputs = RunModel_block(model_dir, hidden_states_, attention_mask, position_ids, repeats, warmup, print_output_elem);
+      auto hidden_states = outputs[0];
+      // past_key_values_[i] = outputs[1].get();
+  }
+  // auto outputs = RunModel_lm();
+  // id = outputs[0];
+
+  // all_seq_len_ += seq_len;
+  // gen_seq_len_++;
   return 0;
 }
