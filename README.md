@@ -42,10 +42,9 @@ bash convert.sh
 
 ```shell
 git clone https://github.com/PaddlePaddle/Paddle-Lite.git
-cd Paddle-Lite
 ```
 
-将`cmake/generic.cmake`285行修改为：
+将`Paddle-Lite/cmake/generic.cmake`284行修改为：
 ```cmake
 target_link_libraries(${TARGET_NAME} ${MKLML_LIB_DIR}/libiomp5.so)
 ```
