@@ -67,3 +67,13 @@ bash linux_build.sh
 ## 遗留问题
 
 1. 在run()结束后，无法将模型运行结果作为返回值返回给主程序
+2. log:
+```
+other has not been implemented transform with dtype3 X, dtype0 Out
+*** Check failure stack trace: ***
+``````
+文件`Paddle-Lite/lite/kernels/host/cast_compute.cc`中，
+- // BOOL = 0;INT16 = 1;INT32 = 2;INT64 = 3;FP16 = 4;FP32 = 5;FP64 = 6;
+- // SIZE_T = 19;UINT8 = 20;INT8 = 21;
+
+可以发现问题原因是对于cast算子，输入类型int64无法转换为输出类型bool

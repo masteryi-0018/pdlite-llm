@@ -232,13 +232,13 @@ std::vector<std::vector<std::vector<std::vector<bool>>>> gen_attention_mask(int 
   return attention_mask;
 }
 
-std::vector<int64_t> gen_position_ids(int seq_len) {
-  std::vector<int64_t> position_ids(seq_len, 0);
+std::vector<float> gen_position_ids(int seq_len) {
+  std::vector<float> position_ids(seq_len, 0);
   if (seq_len == 1) {
       position_ids[0] = 0; // TODO: gen_seq_len_
   } else {
       for (int i = 0; i < seq_len; i++) {
-          position_ids[i] = i;
+          position_ids[i] = float(i);
       }
   }
   return position_ids;
@@ -352,7 +352,7 @@ void RunModel(std::string model_dir,
   // 0. prepare 4 inputs
   int seq_len = input_ids.size();
   auto* hidden_states = const_cast<Tensor*>(output_tensor.get());
-  std::cout << "hidden_states: " << hidden_states->shape() << std::endl;
+  std::cout << "hidden_states: " << hidden_states->shape() << "\n\n" << std::endl;
   auto attention_mask = gen_attention_mask(seq_len);
   auto position_ids = gen_position_ids(seq_len);
   std::vector<int64_t> key_value_shape_ = {2, 7, 1, 2, 128}; // 7 is original ? or 0
@@ -400,7 +400,7 @@ void RunModel(std::string model_dir,
   auto input_tensor_3 = predictor_1->GetInput(2);
   shape_t input_shape_3 = {1, int64_t(position_ids.size())};
   input_tensor_3->Resize(input_shape_3);
-  size_t memory_size_3 = sizeof(int64_t);
+  size_t memory_size_3 = sizeof(float);
   for (auto s : input_shape_3) {
     memory_size_3 *= s;
   }
