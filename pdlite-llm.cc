@@ -1,30 +1,9 @@
-// Copyright (c) 2020 PaddlePaddle Authors. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 #include <chrono>  // NOLINT(build/c++11)
 #include <cmath>
 #include <iostream>
 #include <vector>
 #include "paddle_api.h"  // NOLINT
 #include "cppjieba/Jieba.hpp"
-/////////////////////////////////////////////////////////////////////////
-// If this demo is linked to static library:libpaddle_api_light_bundled.a
-// , you should include `paddle_use_ops.h` and `paddle_use_kernels.h` to
-// avoid linking errors such as `unsupport ops or kernels`.
-/////////////////////////////////////////////////////////////////////////
-// #include "paddle_use_kernels.h"  // NOLINT
-// #include "paddle_use_ops.h"      // NOLINT
 
 using namespace paddle::lite_api;  // NOLINT
 
@@ -268,8 +247,8 @@ std::vector<int64_t> gen_position_ids(int seq_len) {
 //     return token_id <= 2;
 // }
 
-std::vector<std::unique_ptr<const Tensor>> RunModel_emb(std::string model_dir,
-              std::vector<int64_t>& input_t,
+void RunModel(std::string model_dir,
+              std::vector<int64_t>& input_ids,
               size_t repeats,
               size_t warmup,
               size_t print_output_elem
@@ -278,29 +257,16 @@ std::vector<std::unique_ptr<const Tensor>> RunModel_emb(std::string model_dir,
   MobileConfig config;
   config.set_model_from_file(model_dir);
 
-  bool is_opencl_backend_valid = false;
-  try {
-    is_opencl_backend_valid =
-        ::IsOpenCLBackendValid(false /*check_fp16_valid = false*/);
-  } catch (...) {
-    std::cerr << "Paddle-Lite Exception Happened on OpenCL Valid Check!"
-              << std::endl;
-    // Fall back to cpu model
-  }
-  std::cout << "is_opencl_backend_valid:" << is_opencl_backend_valid
-            << std::endl;
-
   // 2. Create PaddlePredictor by MobileConfig
   std::shared_ptr<PaddlePredictor> predictor =
       CreatePaddlePredictor<MobileConfig>(config);
 
   // 3. Prepare input data
-  auto input_tensor = predictor->GetInput(0);
-  shape_t input_shape = {int64_t(input_t.size())};
+  auto input_tensor = predictor->GetInput(0); // input_tensor->shape(): []
+  shape_t input_shape = {int64_t(input_ids.size())};
   input_tensor->Resize(input_shape);
-  size_t memory_size = input_t.size() * sizeof(int64_t);
-
-  input_tensor->ShareExternalMemory(static_cast<void*>(input_t.data()),
+  size_t memory_size = input_ids.size() * sizeof(int64_t);
+  input_tensor->ShareExternalMemory(static_cast<void*>(input_ids.data()),
                                     memory_size,
                                     TargetType(2));
 
@@ -375,109 +341,88 @@ std::vector<std::unique_ptr<const Tensor>> RunModel_emb(std::string model_dir,
               << " standard deviation:" << out_std_dev << std::endl;
     std::cout << "output tensor " << tidx << " mean value:" << out_mean
               << std::endl;
-
-    // print output
-    if (print_output_elem) {
-      for (int i = 0; i < ShapeProduction(out_shape); ++i) {
-        std::cout << "out[" << tidx << "][" << i
-                  << "]:" << output_tensor->data<float>()[i] << std::endl;
-      }
-    }
   }
 
-  std::vector<std::unique_ptr<const Tensor>> ret;
-  std::unique_ptr<const Tensor> output_tensor(predictor->GetOutput(0));
-  std::cout << "precision: " << int(output_tensor->precision()) << std::endl;
-  ret.push_back(std::move(output_tensor));
-  return ret;
-}
+  std::unique_ptr<const Tensor> output_tensor(std::move(predictor->GetOutput(0)));
+  std::cout << "output_tensor: " << output_tensor->shape() << std::endl;
 
-std::vector<paddle::lite_api::Tensor*> RunModel_block(std::string model_dir,
-              const paddle::lite_api::Tensor &hidden_states,
-              std::vector<std::vector<std::vector<std::vector<int64_t>>>> &attention_mask,
-              std::vector<int64_t> &position_ids,
-              size_t repeats,
-              size_t warmup,
-              size_t print_output_elem
-              ) {
+
+  /* ------------------ block run model ------------------ */
+
+
+  int seq_len = input_ids.size();
+  auto inputs_ids_ = input_ids; //  to del
+  auto* hidden_states = const_cast<Tensor*>(output_tensor.get());
+  std::cout << "hidden_states: " << hidden_states->shape() << std::endl;
+  auto attention_mask = gen_attention_mask(seq_len);
+  auto position_ids = gen_position_ids(seq_len);
+  int id = -1;
+  int layer_nums_ = 1;
+  model_dir = "./chatglm2-6b-opt/block_0.nb";
+
   // 1. Set MobileConfig
-  MobileConfig config;
-  config.set_model_from_file(model_dir);
-
-  bool is_opencl_backend_valid = false;
-  try {
-    is_opencl_backend_valid =
-        ::IsOpenCLBackendValid(false /*check_fp16_valid = false*/);
-  } catch (...) {
-    std::cerr << "Paddle-Lite Exception Happened on OpenCL Valid Check!"
-              << std::endl;
-    // Fall back to cpu model
-  }
-  std::cout << "is_opencl_backend_valid:" << is_opencl_backend_valid
-            << std::endl;
+  MobileConfig config_1;
+  config_1.set_model_from_file(model_dir);
 
   // 2. Create PaddlePredictor by MobileConfig
-  std::shared_ptr<PaddlePredictor> predictor =
-      CreatePaddlePredictor<MobileConfig>(config);
+  std::shared_ptr<PaddlePredictor> predictor_1 =  CreatePaddlePredictor<MobileConfig>(config_1);
 
   // 3. Prepare input data
-  // auto input_tensor_1 = predictor->GetInput(0);
-  // shape_t input_shape_1 = hidden_states->shape();
-  // input_tensor_1->Resize(input_shape_1);
-  // size_t memory_size_1 = sizeof(float);
-  // for (auto s : input_shape_1) {
-  //   memory_size_1 *= s;
-  // }
-  // input_tensor_1->ShareExternalMemory(static_cast<void*>(hidden_states),
-  //                                   memory_size_1,
-  //                                   TargetType(2));
-  // std::cout << "gy1 ++++++" << std::endl;
+  auto input_tensor_1 = predictor_1->GetInput(0);
+  shape_t input_shape_1 = hidden_states->shape();
+  input_tensor_1->Resize(input_shape_1);
+  size_t memory_size_1 = sizeof(float);
+  for (auto s : input_shape_1) {
+    memory_size_1 *= s;
+  }
+  input_tensor_1->ShareExternalMemory(static_cast<void*>(hidden_states),
+                                    memory_size_1,
+                                    TargetType(2));
+  std::cout << "gy1 ++++++" << std::endl;
 
-  // auto input_tensor_2 = predictor->GetInput(1);
-  // shape_t input_shape_2 = {1, 1, int64_t(attention_mask[0][0].size()), int64_t(attention_mask[0][0].size())};
-  // input_tensor_2->Resize(input_shape_2);
-  // size_t memory_size_2 = sizeof(float);
-  // for (auto s : input_shape_2) {
-  //   memory_size_2 *= s;
-  // }
-  // input_tensor_2->ShareExternalMemory(static_cast<void*>(attention_mask.data()),
-  //                                   memory_size_2,
-  //                                   TargetType(2));
-  // std::cout << "gy2 ++++++" << std::endl;
+  auto input_tensor_2 = predictor_1->GetInput(1);
+  shape_t input_shape_2 = {1, 1, int64_t(attention_mask[0][0].size()), int64_t(attention_mask[0][0].size())};
+  input_tensor_2->Resize(input_shape_2);
+  size_t memory_size_2 = sizeof(float);
+  for (auto s : input_shape_2) {
+    memory_size_2 *= s;
+  }
+  input_tensor_2->ShareExternalMemory(static_cast<void*>(attention_mask.data()),
+                                    memory_size_2,
+                                    TargetType(2));
+  std::cout << "gy2 ++++++" << std::endl;
 
-  // auto input_tensor_3 = predictor->GetInput(1);
-  // shape_t input_shape_3 = {1, int64_t(position_ids.size())};
-  // input_tensor_3->Resize(input_shape_3);
-  // size_t memory_size_3 = sizeof(float);
-  // for (auto s : input_shape_3) {
-  //   memory_size_3 *= s;
-  // }
-  // input_tensor_3->ShareExternalMemory(static_cast<void*>(position_ids.data()),
-  //                                   memory_size_3,
-  //                                   TargetType(2));
-  // std::cout << "gy3 ++++++" << std::endl;
+  auto input_tensor_3 = predictor_1->GetInput(2);
+  shape_t input_shape_3 = {1, int64_t(position_ids.size())};
+  input_tensor_3->Resize(input_shape_3);
+  size_t memory_size_3 = sizeof(float);
+  for (auto s : input_shape_3) {
+    memory_size_3 *= s;
+  }
+  input_tensor_3->ShareExternalMemory(static_cast<void*>(position_ids.data()),
+                                    memory_size_3,
+                                    TargetType(2));
+  std::cout << "gy3 ++++++" << std::endl;
 
   // 4. Run predictor
-  Timer timeInstance;
-  double first_duration{-1};
   for (size_t widx = 0; widx < warmup; ++widx) {
     if (widx == 0) {
       timeInstance.startTimer();
-      predictor->Run();
+      predictor_1->Run();
       first_duration = timeInstance.getCostTimer();
     } else {
-      predictor->Run();
+      predictor_1->Run();
     }
   }
 
-  double sum_duration = 0.0;
-  double max_duration = 1e-5;
-  double min_duration = 1e5;
-  double avg_duration = -1;
+  sum_duration = 0.0;
+  max_duration = 1e-5;
+  min_duration = 1e5;
+  avg_duration = -1;
   for (size_t ridx = 0; ridx < repeats; ++ridx) {
     timeInstance.startTimer();
     try {
-      predictor->Run();
+      predictor_1->Run();
     } catch (...) {
       std::cerr << "Paddle-Lite Exception Happened on Run()!" << std::endl;
       // Fall back to cpu model
@@ -508,12 +453,12 @@ std::vector<paddle::lite_api::Tensor*> RunModel_block(std::string model_dir,
 
   // 5. Get output
   std::cout << "\n====== output summary ====== " << std::endl;
-  size_t output_tensor_num = predictor->GetOutputNames().size();
+  output_tensor_num = predictor_1->GetOutputNames().size();
   std::cout << "output tensor num:" << output_tensor_num << std::endl;
 
   for (size_t tidx = 0; tidx < output_tensor_num; ++tidx) {
     std::unique_ptr<const paddle::lite_api::Tensor> output_tensor =
-        predictor->GetOutput(tidx);
+        predictor_1->GetOutput(tidx);
     std::cout << "\n--- output tensor " << tidx << " ---" << std::endl;
     auto out_shape = output_tensor->shape();
     auto out_data = output_tensor->data<float>();
@@ -528,31 +473,14 @@ std::vector<paddle::lite_api::Tensor*> RunModel_block(std::string model_dir,
               << " standard deviation:" << out_std_dev << std::endl;
     std::cout << "output tensor " << tidx << " mean value:" << out_mean
               << std::endl;
-
-    // print output
-    if (print_output_elem) {
-      for (int i = 0; i < ShapeProduction(out_shape); ++i) {
-        std::cout << "out[" << tidx << "][" << i
-                  << "]:" << output_tensor->data<float>()[i] << std::endl;
-      }
-    }
   }
-
-  std::vector<paddle::lite_api::Tensor*> ret;
-  for (size_t tidx = 0; tidx < output_tensor_num; ++tidx) {
-    std::unique_ptr<const paddle::lite_api::Tensor> output_tensor =
-        predictor->GetOutput(tidx);
-    paddle::lite_api::Tensor* output_tensor_1 = const_cast<paddle::lite_api::Tensor*>(output_tensor.get());
-    ret.emplace_back(output_tensor_1);
-  }
-  return ret;
 }
+
 
 int main(int argc, char** argv) {
   int repeats = 1;
   int warmup = 1;
   int print_output_elem = 0;
-
   if (argc > 1) {
     std::cerr << "usage: ./" << argv[0] << "\n"
               << std::endl;
@@ -562,29 +490,6 @@ int main(int argc, char** argv) {
   std::string model_dir = "./chatglm2-6b-opt/embedding.nb";
   std::string query = "你好";
   auto input_ids = tokenizer(query); // [64790, 64792, 54761, 31211, 39701, 55437, 31211]
-  auto ret = RunModel_emb(model_dir, input_ids, repeats, warmup, print_output_elem);
-
-  // block
-  int seq_len = input_ids.size();
-  auto inputs_ids_ = input_ids;
-  auto attention_mask = gen_attention_mask(seq_len);
-  auto position_ids = gen_position_ids(seq_len);
-  int id = -1;
-  int layer_nums_ = 1;
-
-  // split block models
-  std::cout << "precision: " << int(ret[0]->precision()) << std::endl;
-  // inp.emplace_back(past_key_values_); // TODO
-  for (int i = 0; i < layer_nums_; i++) {
-      model_dir = "./chatglm2-6b-opt/block_" + std::to_string(i) + ".nb";
-      // auto outputs = RunModel_block(model_dir, hidden_states_, attention_mask, position_ids, repeats, warmup, print_output_elem);
-      // auto hidden_states = outputs[0];
-      // past_key_values_[i] = outputs[1].get();
-  }
-  // auto outputs = RunModel_lm();
-  // id = outputs[0];
-
-  // all_seq_len_ += seq_len;
-  // gen_seq_len_++;
+  RunModel(model_dir, input_ids, repeats, warmup, print_output_elem);
   return 0;
 }
