@@ -163,84 +163,85 @@ std::string base64_decode(std::string const& encoded_string) {
 }
 
 std::vector<int64_t> tokenizer_encode(std::string input_str) {
-    std::vector<int64_t> ids;
-    std::vector<std::string> words;
-    std::string tokenizer_dir_ = "./tokenizer";
-    std::string dict_path = tokenizer_dir_ + "/jieba.dict.utf8";
-    std::string model_path = tokenizer_dir_ + "/hmm_model.utf8";
-    std::string user_dict_path = tokenizer_dir_ + "/user.dict.utf8";
-    std::string idf_path = tokenizer_dir_ + "/idf.utf8";
-    std::string stopWord_path = tokenizer_dir_ + "/stop_words.utf8";
-    std::vector<std::string> word_decoder_;
-    std::unordered_map<std::string, int> word_encoder_;
-    // load vocab
-    {
-        std::string model_name_ = "Chatglm2_6b";
-        std::string vocab_path = tokenizer_dir_ + "/" + model_name_ + "_vocab.txt";
-        printf("load %s ... ", vocab_path.c_str());
-        std::ifstream vocab_file(vocab_path);
-        int index = 0;
-        std::string word;
-        while (vocab_file >> word) {
-            word = base64_decode(word);
-            word_decoder_.push_back(word);
-            word_encoder_.insert(std::make_pair<std::string, int>(std::move(word), index++));
-        }
-        printf("Done!\n");
-    }
-    // encode
-    cppjieba::Jieba jieba(
-        dict_path,
-        model_path,
-        user_dict_path,
-        idf_path,
-        stopWord_path
-    );
-    jieba.Cut(input_str, words, true);
-    for (auto word : words) {
-        const auto& iter = word_encoder_.find(word);
-        if (iter != word_encoder_.end()) {
-            ids.push_back(iter->second);
-        }
-    }
-    return ids;
+  std::vector<int64_t> ids;
+  std::vector<std::string> words;
+  std::string tokenizer_dir_ = "./tokenizer";
+  std::string dict_path = tokenizer_dir_ + "/jieba.dict.utf8";
+  std::string model_path = tokenizer_dir_ + "/hmm_model.utf8";
+  std::string user_dict_path = tokenizer_dir_ + "/user.dict.utf8";
+  std::string idf_path = tokenizer_dir_ + "/idf.utf8";
+  std::string stopWord_path = tokenizer_dir_ + "/stop_words.utf8";
+  std::vector<std::string> word_decoder_;
+  std::unordered_map<std::string, int> word_encoder_;
+  // load vocab
+  {
+      std::string model_name_ = "Chatglm2_6b";
+      std::string vocab_path = tokenizer_dir_ + "/" + model_name_ + "_vocab.txt";
+      printf("load %s ... ", vocab_path.c_str());
+      std::ifstream vocab_file(vocab_path);
+      int index = 0;
+      std::string word;
+      while (vocab_file >> word) {
+          word = base64_decode(word);
+          word_decoder_.push_back(word);
+          word_encoder_.insert(std::make_pair<std::string, int>(std::move(word), index++));
+      }
+      printf("Done!\n");
+  }
+  // encode
+  cppjieba::Jieba jieba(
+      dict_path,
+      model_path,
+      user_dict_path,
+      idf_path,
+      stopWord_path
+  );
+  jieba.Cut(input_str, words, true);
+  for (auto word : words) {
+      const auto& iter = word_encoder_.find(word);
+      if (iter != word_encoder_.end()) {
+          ids.push_back(iter->second);
+      }
+  }
+  return ids;
 }
 
 // Chatglm2_6b
 std::vector<int64_t> tokenizer(const std::string& query) {
-    auto prompt = "\n问：\n" + query + "答：\n";
-    auto ids = tokenizer_encode(prompt);
-    ids.insert(ids.begin(), 64792);
-    ids.insert(ids.begin(), 64790);
-    return ids;
+  auto prompt = "\n问：\n" + query + "答：\n";
+  auto ids = tokenizer_encode(prompt);
+  ids.insert(ids.begin(), 64792);
+  ids.insert(ids.begin(), 64790);
+  return ids;
 }
 
-std::vector<std::vector<std::vector<std::vector<int64_t>>>> gen_attention_mask(int seq_len) {
-    std::vector<std::vector<std::vector<std::vector<int64_t>>>> attention_mask(1, \
-      std::vector<std::vector<std::vector<int64_t>>>(1, std::vector<std::vector<int64_t>>(seq_len, \
-      std::vector<int64_t>(seq_len, 0))));
-    if (seq_len > 1) {
-        for (int i = 0; i < seq_len; i++) {
-            for (int j = 0; j < seq_len; j++) {
-                attention_mask[0][0][i][j] = j > i;
-            }
-        }
-    } else {
-        attention_mask[0][0][0][0] = 0;
-    }
-    return attention_mask;
+std::vector<std::vector<std::vector<std::vector<bool>>>> gen_attention_mask(int seq_len) {
+  std::vector<std::vector<std::vector<std::vector<bool>>>> attention_mask(1, \
+  std::vector<std::vector<std::vector<bool>>>(1, \
+  std::vector<std::vector<bool>>(seq_len, \
+  std::vector<bool>(seq_len, 0))));
+  if (seq_len > 1) {
+      for (int i = 0; i < seq_len; i++) {
+          for (int j = 0; j < seq_len; j++) {
+              attention_mask[0][0][i][j] = j > i;
+          }
+      }
+  } else {
+      attention_mask[0][0][0][0] = 0;
+  }
+  return attention_mask;
 }
 
 std::vector<int64_t> gen_position_ids(int seq_len) {
-    std::vector<int64_t> position_ids(seq_len, 0);
-    if (seq_len == 1) {
-        position_ids[0] = 0; // TODO: gen_seq_len_
-    } else {
-        for (int i = 0; i < seq_len; i++) {
-            position_ids[i] = i;
-        }
-    }
-    return position_ids;
+  std::vector<int64_t> position_ids(seq_len, 0);
+  if (seq_len == 1) {
+      position_ids[0] = 0; // TODO: gen_seq_len_
+  } else {
+      for (int i = 0; i < seq_len; i++) {
+          position_ids[i] = i;
+      }
+  }
+  return position_ids;
 }
 
 // bool Chatglm2_6b::is_stop(int token_id) {
@@ -346,16 +347,20 @@ void RunModel(std::string model_dir,
   std::unique_ptr<const Tensor> output_tensor(std::move(predictor->GetOutput(0)));
   std::cout << "output_tensor: " << output_tensor->shape() << std::endl;
 
-
   /* ------------------ block run model ------------------ */
 
-
+  // 0. prepare 4 inputs
   int seq_len = input_ids.size();
-  auto inputs_ids_ = input_ids; //  to del
   auto* hidden_states = const_cast<Tensor*>(output_tensor.get());
   std::cout << "hidden_states: " << hidden_states->shape() << std::endl;
   auto attention_mask = gen_attention_mask(seq_len);
   auto position_ids = gen_position_ids(seq_len);
+  std::vector<int64_t> key_value_shape_ = {2, 7, 1, 2, 128}; // 7 is original ? or 0
+  std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>> past_key_values_(2, \
+    std::vector<std::vector<std::vector<std::vector<float>>>>(7, \
+    std::vector<std::vector<std::vector<float>>>(1, \
+    std::vector<std::vector<float>>(2, \
+    std::vector<float>(128, 0)))));
   int id = -1;
   int layer_nums_ = 1;
   model_dir = "./chatglm2-6b-opt/block_0.nb";
@@ -378,31 +383,43 @@ void RunModel(std::string model_dir,
   input_tensor_1->ShareExternalMemory(static_cast<void*>(hidden_states),
                                     memory_size_1,
                                     TargetType(2));
-  std::cout << "gy1 ++++++" << std::endl;
+  std::cout << "hidden_states ++++++" << std::endl;
 
   auto input_tensor_2 = predictor_1->GetInput(1);
   shape_t input_shape_2 = {1, 1, int64_t(attention_mask[0][0].size()), int64_t(attention_mask[0][0].size())};
   input_tensor_2->Resize(input_shape_2);
-  size_t memory_size_2 = sizeof(float);
+  size_t memory_size_2 = sizeof(bool);
   for (auto s : input_shape_2) {
     memory_size_2 *= s;
   }
   input_tensor_2->ShareExternalMemory(static_cast<void*>(attention_mask.data()),
                                     memory_size_2,
                                     TargetType(2));
-  std::cout << "gy2 ++++++" << std::endl;
+  std::cout << "attention_mask ++++++" << std::endl;
 
   auto input_tensor_3 = predictor_1->GetInput(2);
   shape_t input_shape_3 = {1, int64_t(position_ids.size())};
   input_tensor_3->Resize(input_shape_3);
-  size_t memory_size_3 = sizeof(float);
+  size_t memory_size_3 = sizeof(int64_t);
   for (auto s : input_shape_3) {
     memory_size_3 *= s;
   }
   input_tensor_3->ShareExternalMemory(static_cast<void*>(position_ids.data()),
                                     memory_size_3,
                                     TargetType(2));
-  std::cout << "gy3 ++++++" << std::endl;
+  std::cout << "position_ids ++++++" << std::endl;
+
+  auto input_tensor_4 = predictor_1->GetInput(3);
+  shape_t input_shape_4 = key_value_shape_;
+  input_tensor_4->Resize(input_shape_4);
+  size_t memory_size_4 = sizeof(float);
+  for (auto s : input_shape_4) {
+    memory_size_4 *= s;
+  }
+  input_tensor_4->ShareExternalMemory(static_cast<void*>(past_key_values_.data()),
+                                    memory_size_4,
+                                    TargetType(2));
+  std::cout << "past_key_values_ ++++++" << std::endl;
 
   // 4. Run predictor
   for (size_t widx = 0; widx < warmup; ++widx) {
